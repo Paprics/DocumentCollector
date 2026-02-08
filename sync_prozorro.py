@@ -1,20 +1,7 @@
 from time import sleep
 from playwright.sync_api import sync_playwright
-import os
+from utils.funcs import save_files_as_html
 
-
-def save_files_as_html(url: str, files: list, filename="output.html"):
-
-    # убеждаемся, что директория существует
-    os.makedirs(os.path.dirname(filename) or ".", exist_ok=True)
-
-    with open(filename, "a", encoding="utf-8") as f:
-        f.write(f"<p><strong>Страница:</strong> <a href='{url}'>{url}</a></p>\n")
-        f.write("<ul>\n")
-        for name, href in files:
-            f.write(f"  <li><a href='{href}'>{name}</a></li>\n")
-        f.write("</ul>\n")
-        f.write("<hr>\n")
 
 with sync_playwright() as p:
     browser = p.chromium.launch(headless=False)
@@ -22,19 +9,11 @@ with sync_playwright() as p:
 
     page = context.new_page()
 
-    for index in range(10, 501):
+    for index in range(100, 120):
         print(f"[INFO]: page: {index}")
 
-        url = (
-            "https://prozorro.gov.ua/uk/search/tender"
-            "?status=complete"
-            "&cpv=45100000-8&cpv=45200000-9&cpv=45300000-0"
-            "&cpv=45400000-1&cpv=50230000-6&cpv=50720000-8"
-            "&cpv=51130000-2&cpv=70000000-1&cpv=71000000-8"
-            "&cpv=76110000-7&cpv=76210000-8&cpv=76300000-6"
-            "&cpv=76400000-7&cpv=45500000-2"
-            f"&page={index}&sort=publication_date,asc"
-        )
+        url = f'https://prozorro.gov.ua/uk/search/tender?cpv=34110000-1&page={index}&status=complete'
+        url = f'https://prozorro.gov.ua/uk/search/tender?cpv=34110000-1&page={index}&status=complete&sort=publication_date,asc'
 
         try:
             page.goto(url, wait_until="networkidle", timeout=30_000)
@@ -67,7 +46,7 @@ with sync_playwright() as p:
             try:
                 page_tender = context.new_page()
                 page_tender.goto(full_url, wait_until="networkidle", timeout=30_000)
-                sleep(1)
+                sleep(0.1)
             except Exception as e:
                 print(f"[ERROR] Не удалось открыть страницу тендера: {e}")
                 continue
@@ -103,7 +82,7 @@ with sync_playwright() as p:
 
                             # кликаем аккордеон, раскрываем
                             trigger.click()
-                            page_tender.wait_for_timeout(3000)
+                            page_tender.wait_for_timeout(300)
                             print(f"[DEB]: раскрыт accordion {i_bid + 1}/{count_bids}")
 
                             # ищем селект "Показати рядків" внутри текущего bid
@@ -111,11 +90,11 @@ with sync_playwright() as p:
                             if select_locator.count() > 0:
                                 print("[INFO] Селект найден, раскрываем список")
                                 select_locator.locator("p.select__label").click()
-                                page_tender.wait_for_timeout(500)  # небольшая пауза для анимации
+                                page_tender.wait_for_timeout(300)  # небольшая пауза для анимации
                                 option_all = select_locator.locator("div.select__element", has_text="Всі")
                                 if option_all.count() > 0:
                                     option_all.first.click()
-                                    page_tender.wait_for_timeout(1000)
+                                    page_tender.wait_for_timeout(300)
                                     print("[INFO] Выбрано 'Всі'")
                                 else:
                                     print("[WARN] Элемент 'Всі' не найден")
@@ -148,7 +127,7 @@ with sync_playwright() as p:
 
                             # закрываем аккордеон
                             trigger.click()
-                            page_tender.wait_for_timeout(1000)
+                            page_tender.wait_for_timeout(100)
                             print(f"[DEB]: закрыт accordion {i_bid + 1}/{count_bids}")
 
                         except Exception as e:
