@@ -1,6 +1,7 @@
 import asyncio
 from playwright.async_api import async_playwright, TimeoutError
 from utils.funcs import save_files_as_html
+import time
 
 MAX_CONCURRENT_TENDERS = 7  # лимит одновременных вкладок
 
@@ -178,7 +179,7 @@ async def main():
         context = await browser.new_context()
         page = await context.new_page()
 
-        for index in range(100, 201):  # пример диапазона страниц
+        for index in range(288, 301):  # пример диапазона страниц
             links = await fetch_tender_links(page, index)
             print(f"[INFO] Страница {index} собрала {len(links)} тендеров")
 
@@ -191,4 +192,7 @@ async def main():
 
 
 if __name__ == "__main__":
+    start = time.time()
     asyncio.run(main())
+    t = int(time.time() - start)
+    print(f"Execution time: {t//3600:02}:{t%3600//60:02}:{t%60:02}")
