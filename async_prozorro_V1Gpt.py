@@ -166,8 +166,8 @@ async def run_scraper(start_page: int, end_page: int, headless: bool, max_concur
 
 if __name__ == "__main__":
     HEADLESS = True
-    START_PAGE = 290
-    END_PAGE = 300
+    START_PAGE = 300
+    END_PAGE = 400
     MAX_CONCURRENT_TENDERS = 10
 
     start_time = time.time()
