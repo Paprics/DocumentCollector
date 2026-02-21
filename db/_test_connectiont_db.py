@@ -1,5 +1,5 @@
 from sqlalchemy import text
-from db.session import SessionLocal
+from db.core.session import SessionLocal
 
 print("Проверка подключения к БД...")
 

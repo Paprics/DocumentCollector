@@ -1,4 +1,9 @@
+#file_hash
 from sqlalchemy import String
+from sqlalchemy.orm import Mapped, mapped_column
+
+from db.core.base import Base
+
 
 class FileHash(Base):
     __tablename__ = "file_hashes"

@@ -1,1 +1,1 @@
-from .file_hash import User
+from .file_hash import FileHash

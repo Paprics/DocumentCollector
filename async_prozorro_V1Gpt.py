@@ -45,7 +45,7 @@ async def process_participant(page: Page, participant_block):
         await page.wait_for_timeout(200)
 
         try:
-            await participant_block.locator('xpath=.//span[@class="select__text"]').click()
+            await participant_block.locator('xpath=.//span[@class="select__text"]').click(timeout=4000)
             await page.wait_for_timeout(200)
             await participant_block.locator('xpath=.//div[@class="select__element"][last()]').click()
             await page.wait_for_timeout(200)
@@ -165,10 +165,10 @@ async def run_scraper(start_page: int, end_page: int, headless: bool, max_concur
         await browser.close()
 
 if __name__ == "__main__":
-    HEADLESS = False
-    START_PAGE = 200
+    HEADLESS = True
+    START_PAGE = 290
     END_PAGE = 300
-    MAX_CONCURRENT_TENDERS = 7
+    MAX_CONCURRENT_TENDERS = 10
 
     start_time = time.time()
     asyncio.run(run_scraper(

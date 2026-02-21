@@ -1,7 +1,15 @@
 #engine.py
 
+from pathlib import Path
 from sqlalchemy import create_engine
-from config.settings import settings
 
+BASE_DIR = Path(__file__).resolve().parent.parent  # db/
+DB_PATH = BASE_DIR / "data" / "db.sqlite"
 
-engine = create_engine(settings.DATABASE_URL)
+DATABASE_URL = f"sqlite:///{DB_PATH}"
+
+engine = create_engine(
+    DATABASE_URL,
+    echo=True,
+    connect_args={"check_same_thread": False}
+)
