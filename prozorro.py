@@ -1,143 +1,231 @@
-from time import sleep
-from playwright.sync_api import sync_playwright
+import random
+import time
+from functools import wraps
+from playwright.sync_api import sync_playwright, Page
+from playwright.sync_api import TimeoutError as PWTimeout
 from utils.funcs import save_files_as_html
 
 
-with sync_playwright() as p:
-    browser = p.chromium.launch(headless=False)
-    context = browser.new_context()
+def retry(attempts=100, delay_range=(2, 3)):
+    def decorator(func):
+        @wraps(func)
+        def wrapper(page, *args, **kwargs):
+            for attempt in range(1, attempts + 1):
+                result = func(page, *args, **kwargs)
 
-    page = context.new_page()
+                if result is not None:
+                    print(f"[INFO] {func.__name__} — успех с попытки {attempt}")
+                    return result
 
-    for index in range(100, 120):
-        print(f"[INFO]: page: {index}")
+                print(f"[WARN] попытка {attempt}/{attempts} — результат None")
 
-        url = f'https://prozorro.gov.ua/uk/search/tender?cpv=34110000-1&page={index}&status=complete'
-        url = f'https://prozorro.gov.ua/uk/search/tender?cpv=34110000-1&page={index}&status=complete&sort=publication_date,asc'
+                if attempt < attempts:
+                    sleep_time = random.uniform(*delay_range)
+                    time.sleep(sleep_time)
+                    try:
+                        page.reload()
+                    except Exception as e:
+                        print(f"[WARN] reload failed: {e}")
+
+            print(f"[ERROR] {func.__name__} — попытки исчерпаны")
+            try:
+                page.close()
+            except Exception:
+                pass
+            return None
+
+        return wrapper
+
+    return decorator
+
+
+def fetch_documents(documents):
+    result = []
+    for i in range(documents.count()):
+        document_item = documents.nth(i)
+        links = document_item.locator('a').all()
+        for link in links:
+            spans = link.locator('span').all_text_contents()
+            title = spans[0] if spans else link.text_content() or "Без названия"
+            href = link.get_attribute('href') or "Без ссылки"
+            result.append((title, href))
+    return result
+
+
+def process_participant(page: Page, participant_block):
+    """
+    Обработка одного участника тендера.
+    """
+    try:
+        participant_block.scroll_into_view_if_needed()
+        page.wait_for_timeout(300)
+
+        # OPEN ACCORDION
+        accordion_triger = participant_block.locator('xpath=.//button[contains(@class, "accordion__trigger")]').first
+        accordion_triger.click()
+        page.wait_for_timeout(200)
+
+        # Попытка открыть все докементы
+        try:
+            participant_block.locator('xpath=.//span[@class="select__text"]').click()
+            page.wait_for_timeout(200)
+            participant_block.locator('xpath=.//div[@class="select__element"][last()]').click()
+            page.wait_for_timeout(200)
+
+        except Exception as e:
+            print(f"[ERROR] ошибка получения всех док или < 5")
 
         try:
-            page.goto(url, wait_until="networkidle", timeout=30_000)
-            page.wait_for_selector("li.search-result-card__wrap", timeout=10_000)
+            document_block = participant_block.locator('xpath=.//div[@class="documents"]/div/ul')
+            print(f'[INFO] на тендеде найдено {document_block.count()} докементов')
+
+            # print(f'[DEBUG TIMEE 5S]')
+            # page.wait_for_timeout(5000)
+
+            if document_block.count() > 0:
+                result = fetch_documents(document_block)
+                save_files_as_html(url=page.url, files=result)
+            else:
+                print(f'[WARN] Документов == 0', '|', document_block.count())
+
         except Exception as e:
-            print(f"[ERROR] Не удалось открыть страницу {index}: {e}")
-            continue
+            print(f'[ERROR 🔴🔴🔴🔴] (НЕ ПРЕДВИДЕНАЯ ОШИБКА ПОСКА ДОКУМЕНТОВ) {e}')
 
-        items = page.locator("li.search-result-card__wrap")
-        count_items = items.count()
-        print(f"[INFO]: found {count_items} items")
+        # CLOSE ACCORDION
+        accordion_triger = participant_block.locator('xpath=.//button[contains(@class, "accordion__trigger")]').first
+        accordion_triger.scroll_into_view_if_needed()
+        page.wait_for_timeout(200)
+        accordion_triger.click()
+        page.wait_for_timeout(200)
 
-        if count_items == 0:
-            break  # дальше страниц нет
+    except Exception as e:
+        print(f'[ERROR 🔴🔴🔴🔴] (НЕ ПРЕДВИДЕНАЯ ОШИБКА) {e}')
 
-        for i_tender in range(count_items):
+
+@retry(attempts=100)
+def process_tender_page(page, tender_url: str):
+    url = f'https://prozorro.gov.ua/uk{tender_url}'
+    page.goto(url)
+
+    # Ждём title
+    try:
+        title_locator = page.locator('//h2[contains(@class, "title--large")]')
+        title_locator.first.wait_for(timeout=5000)
+        title_text = title_locator.first.text_content()
+        if not title_text:
+            return None
+    except PWTimeout:
+        return None
+
+    # Извлечение участников
+    try:
+        participants_locator = page.locator(
+            '//section[contains(@class, "register")]//div[contains(@class, "accordion")]'
+        )
+
+        participants_locator.first.wait_for(timeout=2500)
+        participants_count = participants_locator.count()
+
+        if participants_count == 0:
+            print(f'[INFO] тендер {url} — нет участников')
+            return []
+        else:
+            print(f'[INFO] тендер {url} — {participants_count} участников')
+            # participants_locator.first.scroll_into_view_if_needed()
+            return participants_locator
+    except PWTimeout:
+        print(f'[DEB] участников не найдено 😌{page.url}')
+        page.close()
+        return []
+
+
+@retry(attempts=100)
+def fetch_tender_links(page, page_index: int):
+    url = (
+        f"https://prozorro.gov.ua/uk/search/tender?"
+        f"cpv=34110000-1&page={page_index}&status=complete&sort=publication_date,asc"
+    )
+
+    page.goto(url)
+
+    try:
+        links_locator = page.locator(
+            '//ul[@class="search-result__list"]//a[contains(@class,"item-title__title")]'
+        )
+        links_locator.first.wait_for(timeout=10000)
+
+        links = links_locator.evaluate_all(
+            "els => els.map(e => e.getAttribute('href'))"
+        )
+
+        links = [l for l in links if l]
+        return links or None
+
+    except PWTimeout:
+        return None
+
+
+def run_scraper(start_page: int, end_page: int, headless: bool):
+    """
+    Основной цикл: перебор страниц и обработка тендеров.
+    """
+    with sync_playwright() as pw:
+        browser = pw.chromium.launch(
+            headless=headless,
+            args=["--no-sandbox", "--disable-setuid-sandbox"]
+        )
+        context = browser.new_context(
+            viewport={"width": 1920, "height": 1080},
+            user_agent=(
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/117.0.0.0 Safari/537.36"
+            ),
+            locale="uk-UA"
+        )
+
+        page = context.new_page()
+
+        for page_index in range(start_page, end_page + 1):
+            print(f"[INFO] Обработка страницы {page_index}")
+
             try:
-                item = items.nth(i_tender)
-                href = item.locator("a.item-title__title").get_attribute("href")
+                # Получить список тендеров
+                tender_links = fetch_tender_links(page, page_index)
+                print(f'[DED] На странице {page_index} собраны тендеры - {len(tender_links)} |)')
             except Exception as e:
-                print(f"[ERROR] Не удалось получить href для тендера {i_tender}: {e}")
-                continue
+                print(f'[ERROR] {e}')
 
-            if not href:
-                continue
+            # Итерация по тендерам
+            for tender_url in tender_links:
 
-            full_url = "https://prozorro.gov.ua" + href
-            print(f'[INFO]: open page: {full_url}')
+                page = context.new_page()
 
-            try:
-                page_tender = context.new_page()
-                page_tender.goto(full_url, wait_until="networkidle", timeout=30_000)
-                sleep(0.1)
-            except Exception as e:
-                print(f"[ERROR] Не удалось открыть страницу тендера: {e}")
-                continue
+                # Получить на стр. тендера список участников
+                try:
+                    participants = process_tender_page(page, tender_url)
 
-            try:
-                # ждём сам блок "Реєстр пропозицій"
-                if page_tender.locator("section#register_of_proposals").count() == 0:
-                    print("[INFO] Блок 'Реєстр пропозицій' отсутствует")
-                    page_tender.close()
-                    continue
-            except Exception as e:
-                print(f"[ERROR] Ошибка при проверке блока 'Реєстр пропозицій': {e}")
-                page_tender.close()
-                continue
-
-            try:
-                # получаем все аккордеоны с заявками
-                bids = page_tender.locator("section#register_of_proposals div.accordion")
-                count_bids = bids.count()
-
-                if count_bids == 0:
-                    print("Заявок нет")
-                else:
-                    print(f"Количество заявок: {count_bids}")
-
-                    for i_bid in range(count_bids):
-                        try:
-                            bid = bids.nth(i_bid)
-                            trigger = bid.locator("button.accordion__trigger")
-
-                            # скроллим к текущему элементу
-                            trigger.scroll_into_view_if_needed()
-
-                            # кликаем аккордеон, раскрываем
-                            trigger.click()
-                            page_tender.wait_for_timeout(300)
-                            print(f"[DEB]: раскрыт accordion {i_bid + 1}/{count_bids}")
-
-                            # ищем селект "Показати рядків" внутри текущего bid
-                            select_locator = bid.locator("div.select.app-list-nav__select")
-                            if select_locator.count() > 0:
-                                print("[INFO] Селект найден, раскрываем список")
-                                select_locator.locator("p.select__label").click()
-                                page_tender.wait_for_timeout(300)  # небольшая пауза для анимации
-                                option_all = select_locator.locator("div.select__element", has_text="Всі")
-                                if option_all.count() > 0:
-                                    option_all.first.click()
-                                    page_tender.wait_for_timeout(300)
-                                    print("[INFO] Выбрано 'Всі'")
-                                else:
-                                    print("[WARN] Элемент 'Всі' не найден")
-
-                            # ищем все блоки документов внутри текущего bid
-                            documents_blocks = bid.locator("div.documents")
-                            files = []
-
-                            for b_index in range(documents_blocks.count()):
-                                block = documents_blocks.nth(b_index)
-                                items_docs = block.locator("li.documents__item")
-                                for i_doc in range(items_docs.count()):
-                                    doc_item = items_docs.nth(i_doc)
-                                    link_locator = doc_item.locator("a.documents__link")
-                                    href_doc = link_locator.get_attribute("href")
-                                    name_locator = link_locator.locator("span.link-blank__text")
-                                    name_doc = name_locator.inner_text().strip() if name_locator.count() > 0 else "unknown"
-
-                                    if href_doc:
-                                        files.append((name_doc, href_doc))
-
-                            if files:
-                                print(f"[INFO] Найдено {len(files)} документов")
-                                current_url = page_tender.url
-                                save_files_as_html(url=current_url, files=files)
-                                # for f in files:
-                                #     print(f)
-                            else:
-                                print("[INFO] Документы не найдены")
-
-                            # закрываем аккордеон
-                            trigger.click()
-                            page_tender.wait_for_timeout(100)
-                            print(f"[DEB]: закрыт accordion {i_bid + 1}/{count_bids}")
-
-                        except Exception as e:
-                            print(f"[ERROR] Ошибка обработки аккордеона {i_bid + 1}: {e}")
-                            continue
-
-            except Exception as e:
-                print(f"[ERROR] Ошибка обработки блока 'Реєстр пропозицій': {e}")
-
-            page_tender.close()
-            print('----')
+                    # Итерация по учасиникам
+                    if not participants:  # Если список с участниками пустой(нет участников)
+                        continue
+                    for i in range(participants.count()):
+                        print(f'[INFO] Обработка {i + 1} участника тендера - {page.url}')
+                        participant_block = participants.nth(i)
+                        process_participant(page, participant_block)
 
 
+
+                    page.close()
+                    print('----' * 100)
+
+                # #         save_results(documents, tender_url)
+                except Exception as e:
+                    print(f'[ERROR] {e}')
+
+
+if __name__ == "__main__":
+    HEADLESS = False
+    START_PAGE = 293
+    END_PAGE = 300
+    run_scraper(START_PAGE, END_PAGE, HEADLESS)
+    # MAX_CONCURRENT_TENDERS = 1   # не удалять
