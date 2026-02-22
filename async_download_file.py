@@ -69,7 +69,7 @@ async def download_files_from_html(
 
 
 async def main():
-    html_file = Path("output_data/base_output.html")  # пример пути к HTML
+    html_file = Path("output_data/output.html")
     await download_files_from_html(
         html_file,
         save_dir="downloads",

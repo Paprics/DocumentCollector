@@ -10,7 +10,7 @@ DB_PATH = BASE_DIR / "data" / "db.sqlite"
 DATABASE_URL = f"sqlite:///{DB_PATH}"
 engine = create_engine(
     DATABASE_URL,
-    echo=True,
+    echo=True,  # True — выводит каждый SQL, False — не выводит
     connect_args={"check_same_thread": False}
 )
 
@@ -18,6 +18,6 @@ engine = create_engine(
 ASYNC_DATABASE_URL = f"sqlite+aiosqlite:///{DB_PATH}"
 async_engine = create_async_engine(
     ASYNC_DATABASE_URL,
-    echo=True,
+    echo=False,
     future=True
 )

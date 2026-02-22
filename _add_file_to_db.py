@@ -1,3 +1,7 @@
+"""
+Скрипт для добавления hash значений в БД(Синхронизация).
+Одноразово.
+"""
 import asyncio
 import hashlib
 from pathlib import Path

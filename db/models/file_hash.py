@@ -18,6 +18,19 @@ class FileHash(Base):
     )
 
 
+class Tender(Base):
+    __tablename__ = "tenders"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+
+    tender_id: Mapped[str] = mapped_column(
+        String(50),
+        unique=True,
+        nullable=False,
+        index=True
+    )
+
+
 # бинарное хранение (рекомендую)
 # from sqlalchemy.orm import Mapped, mapped_column
 # from sqlalchemy import LargeBinary
