@@ -145,8 +145,8 @@ async def handle_tender(context, tender_url):
     try:
         participants = await process_tender_page(page, tender_url)
         if participants:
-            for i in range(await participants.count()):
-                participant_block = participants.nth(i)
+            participant_blocks = await participants.all()  # собираем сразу все локаторы
+            for i, participant_block in enumerate(participant_blocks):
                 print(f'[INFO] Обработка {i + 1} участника тендера - {page.url}')
                 await process_participant(page, participant_block)
     finally:
@@ -156,19 +156,17 @@ async def handle_tender(context, tender_url):
 # Worker для обработки тендеров из очереди
 # -----------------------
 async def tender_worker(name: str, context, queue: asyncio.Queue):
-    async with async_session() as session:  # сессия внутри воркера
+    async with async_session() as session:
         while True:
             tender_url = await queue.get()
             try:
                 tender_id = tender_url.rstrip('/').split('/')[-1]
 
-                # Проверяем в базе и вставляем перед обработкой
+                # Проверяем в базе перед обработкой
                 exists = await tender_exists(session, tender_id)
                 if exists:
                     print(f"[INFO] {name} — тендер {tender_id} уже в базе, пропускаем")
                     continue
-
-                print(f"[INFO🔻DEBUG] {name} — тендер {tender_id} запуск в роботу")
 
                 await insert_tender(session, tender_id)
                 print(f"[INFO] {name} обрабатывает {tender_url}")
@@ -180,7 +178,29 @@ async def tender_worker(name: str, context, queue: asyncio.Queue):
                 queue.task_done()
 
 # -----------------------
-# Главный запуск скрапера
+# Producer для заполнения очереди параллельно с воркерами
+# -----------------------
+async def fetch_links_worker(name: str, context, start_page: int, end_page: int, queue: asyncio.Queue):
+    async with async_session() as session:
+        page = await context.new_page()
+        for page_index in range(start_page, end_page + 1):
+            page_url = f"https://prozorro.gov.ua/uk/search/tender?cpv=09240000-3&page={page_index}"
+            print(f"[INFO] {name} — обработка страницы {page_index}")
+            tender_links = await fetch_tender_links(page, page_url)
+            if not tender_links:
+                continue
+
+            for link in tender_links:
+                tender_id = link.rstrip('/').split('/')[-1]
+                exists = await tender_exists(session, tender_id)
+                if exists:
+                    print(f"[INFO] {name} — тендер {tender_id} уже в базе, пропускаем")
+                    continue
+                await queue.put(f'https://prozorro.gov.ua/uk{link}')
+        await page.close()
+
+# -----------------------
+# Главный запуск скрапера с параллельным Producer + Consumers
 # -----------------------
 async def run_scraper(start_page: int, end_page: int,
                       headless: bool, max_concurrent_tenders: int):
@@ -202,32 +222,22 @@ async def run_scraper(start_page: int, end_page: int,
             locale="uk-UA"
         )
 
-        page = await context.new_page()
-
-        # Producer: формируем URL прямо в цикле с f-string
-        for page_index in range(start_page, end_page + 1):
-            page_url = f"https://prozorro.gov.ua/uk/search/tender?cpv=70120000-8&page={page_index}"
-            print(f"[INFO] Обработка страницы {page_index}")
-            tender_links = await fetch_tender_links(page, page_url)
-            if not tender_links:
-                continue
-
-            for link in tender_links:
-                full_url = f'https://prozorro.gov.ua/uk{link}'
-                await queue.put(full_url)  # добавляем только в очередь
-
-        await page.close()
-
-        # Consumer: создаём воркеров для обработки очереди
+        # Запускаем воркеров сразу
         workers = [
             asyncio.create_task(tender_worker(f"Worker-{i+1}", context, queue))
             for i in range(max_concurrent_tenders)
         ]
 
-        await queue.join()  # ждём пока очередь обработается
+        # Producer отдельно
+        producer = asyncio.create_task(fetch_links_worker(
+            "Producer", context, start_page, end_page, queue
+        ))
+
+        await producer  # ждём, пока Producer закончит
+        await queue.join()  # ждём, пока воркеры обработают всё
 
         for w in workers:
-            w.cancel()  # останавливаем воркеров
+            w.cancel()
 
         await browser.close()
 
@@ -237,8 +247,8 @@ async def run_scraper(start_page: int, end_page: int,
 if __name__ == "__main__":
     HEADLESS = True
     START_PAGE = 1
-    END_PAGE = 93
-    MAX_CONCURRENT_TENDERS = 10
+    END_PAGE = 42
+    MAX_CONCURRENT_TENDERS = 7
 
     start_time = time.time()
     asyncio.run(run_scraper(
