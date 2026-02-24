@@ -6,7 +6,8 @@ import aiohttp
 from bs4 import BeautifulSoup
 
 from db.core.session import async_session
-from db.crud import file_hash_exists, insert_file_hash  # функции проверки и вставки хэша
+from db.crud import file_hash_exists, insert_file_hash
+from sources import SOURCES
 
 
 async def download_files_from_html(
@@ -22,7 +23,10 @@ async def download_files_from_html(
     save_dir.mkdir(parents=True, exist_ok=True)
 
     print(f"\nОбработка HTML файла: {html_path.name}")
-    html_content = html_path.read_text(encoding="utf-8")
+
+    raw = html_path.read_bytes()
+    html_content = raw.decode("utf-8", errors="replace")
+
     soup = BeautifulSoup(html_content, "html.parser")
 
     # Парсим ссылки с ключевыми словами

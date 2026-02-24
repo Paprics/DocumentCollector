@@ -9,6 +9,24 @@ from utils.funcs import save_files_as_html
 from sqlalchemy.ext.asyncio import AsyncSession
 from db.crud import insert_tender, tender_exists
 from db.core.session import async_session
+import argparse
+
+from sources import SOURCES
+
+
+def cli():
+    parser = argparse.ArgumentParser(description="Run scraper")
+
+    parser.add_argument(
+        "-s", "--source",
+        type=int,
+        default=10,
+        help="Select source ID (default: 10)"
+    )
+
+    args = parser.parse_args()
+    return args.source
+
 
 # -----------------------
 # Retry decorator: повторяет функцию, если вернула None
@@ -27,8 +45,11 @@ def retry(attempts=100, delay_range=(2, 3)):
                     await asyncio.sleep(random.uniform(*delay_range))
             print(f"[ERROR] {func.__name__} — попытки исчерпаны")
             return None
+
         return wrapper
+
     return decorator
+
 
 # -----------------------
 # Получает список документов участника
@@ -44,6 +65,7 @@ async def fetch_documents(documents):
             href = await link.get_attribute('href') or "Без ссылки"
             result.append((title, href))
     return result
+
 
 # -----------------------
 # Обработка отдельного участника тендера
@@ -79,7 +101,8 @@ async def process_participant(page: Page, participant_block):
 
         if count > 0:
             result = await fetch_documents(document_block)
-            await asyncio.to_thread(save_files_as_html, url=page.url, files=result)
+            await asyncio.to_thread(save_files_as_html, url=page.url, files=result,
+                                    filename=f'output_data/{current_source['name']}.html')
 
         await accordion_triger.scroll_into_view_if_needed()
         await page.wait_for_timeout(200)
@@ -88,6 +111,7 @@ async def process_participant(page: Page, participant_block):
 
     except Exception as e:
         print(f'[ERROR] (НЕПРЕДВИДЕННАЯ ОШИБКА) {e}')
+
 
 # -----------------------
 # Обработка страницы тендера
@@ -111,13 +135,14 @@ async def process_tender_page(page: Page, tender_url: str):
         await participants_locator.first.wait_for(timeout=2500)
         count = await participants_locator.count()
         if count == 0:
-            print(f'[INFO] тендер {tender_url} — нет участников')
+            print(f'[INFO] 🟡 тендер {tender_url} — нет участников')
             return []
-        print(f'[INFO] тендер {tender_url} — {count} участников')
+        print(f'[INFO🟢] тендер {tender_url} — {count} участников')
         return participants_locator
     except PWTimeout:
-        print(f'[DEB] участников не найдено 😌 {page.url}')
+        print(f'[DEB] 🟡 участников не найдено {page.url}')
         return []
+
 
 # -----------------------
 # Получение ссылок на тендеры со страницы поиска
@@ -137,6 +162,7 @@ async def fetch_tender_links(page: Page, page_url: str):
     except PWTimeout:
         return None
 
+
 # -----------------------
 # Обработка отдельного тендера
 # -----------------------
@@ -151,6 +177,7 @@ async def handle_tender(context, tender_url):
                 await process_participant(page, participant_block)
     finally:
         await page.close()
+
 
 # -----------------------
 # Worker для обработки тендеров из очереди
@@ -177,6 +204,7 @@ async def tender_worker(name: str, context, queue: asyncio.Queue):
             finally:
                 queue.task_done()
 
+
 # -----------------------
 # Producer для заполнения очереди параллельно с воркерами
 # -----------------------
@@ -184,7 +212,7 @@ async def fetch_links_worker(name: str, context, start_page: int, end_page: int,
     async with async_session() as session:
         page = await context.new_page()
         for page_index in range(start_page, end_page + 1):
-            page_url = f"https://prozorro.gov.ua/uk/search/tender?cpv=09240000-3&page={page_index}"
+            page_url = current_source['url'].format(page=page_index)
             print(f"[INFO] {name} — обработка страницы {page_index}")
             tender_links = await fetch_tender_links(page, page_url)
             if not tender_links:
@@ -199,12 +227,12 @@ async def fetch_links_worker(name: str, context, start_page: int, end_page: int,
                 await queue.put(f'https://prozorro.gov.ua/uk{link}')
         await page.close()
 
+
 # -----------------------
 # Главный запуск скрапера с параллельным Producer + Consumers
 # -----------------------
 async def run_scraper(start_page: int, end_page: int,
                       headless: bool, max_concurrent_tenders: int):
-
     queue = asyncio.Queue()
 
     async with async_playwright() as pw:
@@ -224,7 +252,7 @@ async def run_scraper(start_page: int, end_page: int,
 
         # Запускаем воркеров сразу
         workers = [
-            asyncio.create_task(tender_worker(f"Worker-{i+1}", context, queue))
+            asyncio.create_task(tender_worker(f"Worker-{i + 1}", context, queue))
             for i in range(max_concurrent_tenders)
         ]
 
@@ -241,22 +269,39 @@ async def run_scraper(start_page: int, end_page: int,
 
         await browser.close()
 
+
 # -----------------------
 # Entry point
 # -----------------------
 if __name__ == "__main__":
+    selected_source = cli()
+
+    current_source = SOURCES[selected_source]
+    downloads = False
+
+    print(
+        f"[INFO] Выбран: {selected_source}, "
+        f"Max page: {current_source['max_page']}, Downloads: {downloads}, "
+        f"Title: {current_source['name']} | {current_source['comment']}\n"
+        f"{current_source['url']}\n"
+    )
+
     HEADLESS = True
     START_PAGE = 1
-    END_PAGE = 42
-    MAX_CONCURRENT_TENDERS = 7
+    END_PAGE = current_source['max_page']
+    MAX_CONCURRENT_TENDERS = 10
 
     start_time = time.time()
+
     asyncio.run(run_scraper(
         start_page=START_PAGE,
         end_page=END_PAGE,
         headless=HEADLESS,
         max_concurrent_tenders=MAX_CONCURRENT_TENDERS
     ))
-    end_time = time.time()
-    elapsed = end_time - start_time
-    print(f"[INFO] Скрипт завершён. Время работы: {elapsed:.2f} секунд ({elapsed/60:.2f} минут)")
+
+    elapsed = time.time() - start_time
+    hours, remainder = divmod(int(elapsed), 3600)
+    minutes, _ = divmod(remainder, 60)
+
+    print(f"\n[INFO] Скрипт завершён. Время работы: {hours} часов {minutes} минут")
