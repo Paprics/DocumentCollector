@@ -77,7 +77,7 @@ async def main(sources_id: int):
     file_name = SOURCES[sources_id]['name']
 
     html_file = Path("output_data", f'{file_name}.html')
-    save_dir = Path("downloads", file_name)
+    save_dir = Path("downloads", f'{sources_id}. {file_name}')
     save_dir.mkdir(parents=True, exist_ok=True)
 
     await download_files_from_html(
@@ -88,5 +88,5 @@ async def main(sources_id: int):
 
 
 if __name__ == "__main__":
-    sources_id = 8
+    sources_id = 15
     asyncio.run(main(sources_id))

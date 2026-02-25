@@ -286,9 +286,10 @@ async def run_scraper(start_page: int, end_page: int,
 # Entry point
 # -----------------------
 if __name__ == "__main__":
+
     # дефолты для дебага / запуска без CLI
-    DEFAULT_SOURCE_ID = 10
-    DEFAULT_MAX_TABS = 5
+    DEFAULT_SOURCE_ID = 15
+    DEFAULT_MAX_TABS = 15
 
     selected_source, concurrency_tabs = cli(DEFAULT_SOURCE_ID, DEFAULT_MAX_TABS)
 
@@ -323,4 +324,4 @@ if __name__ == "__main__":
     hours, remainder = divmod(int(elapsed), 3600)
     minutes, _ = divmod(remainder, 60)
 
-    print(f"\n[INFO] Скрипт завершён. Время работы: {hours} часов {minutes} минут")
+    print(f"\n[INFO] Скрипт завершён. Время работы: {hours} часов {minutes} минут, Current source: {selected_source}\n{current_source}")
