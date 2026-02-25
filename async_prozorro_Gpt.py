@@ -14,18 +14,30 @@ import argparse
 from sources import SOURCES
 
 
-def cli():
-    parser = argparse.ArgumentParser(description="Run scraper")
+def cli(default_source_id, default_max_tabs):
+    parser = argparse.ArgumentParser(
+        description="Run scraper with selectable source and concurrency",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter
+    )
 
     parser.add_argument(
         "-s", "--source",
         type=int,
-        default=10,
-        help="Select source ID (default: 10)"
+        default=default_source_id,
+        metavar="ID",
+        help="Source ID from SOURCES dictionary"
+    )
+
+    parser.add_argument(
+        "-c", "--concurrency",
+        type=int,
+        default=default_max_tabs,
+        metavar="N",
+        help="Number of parallel browser tabs"
     )
 
     args = parser.parse_args()
-    return args.source
+    return args.source, args.concurrency
 
 
 # -----------------------
@@ -232,7 +244,7 @@ async def fetch_links_worker(name: str, context, start_page: int, end_page: int,
 # Главный запуск скрапера с параллельным Producer + Consumers
 # -----------------------
 async def run_scraper(start_page: int, end_page: int,
-                      headless: bool, max_concurrent_tenders: int):
+                      headless: bool, max_tabs: int):
     queue = asyncio.Queue()
 
     async with async_playwright() as pw:
@@ -253,7 +265,7 @@ async def run_scraper(start_page: int, end_page: int,
         # Запускаем воркеров сразу
         workers = [
             asyncio.create_task(tender_worker(f"Worker-{i + 1}", context, queue))
-            for i in range(max_concurrent_tenders)
+            for i in range(max_tabs)
         ]
 
         # Producer отдельно
@@ -274,30 +286,37 @@ async def run_scraper(start_page: int, end_page: int,
 # Entry point
 # -----------------------
 if __name__ == "__main__":
-    selected_source = cli()
+    # дефолты для дебага / запуска без CLI
+    DEFAULT_SOURCE_ID = 10
+    DEFAULT_MAX_TABS = 5
+
+    selected_source, concurrency_tabs = cli(DEFAULT_SOURCE_ID, DEFAULT_MAX_TABS)
+
+    if selected_source not in SOURCES:
+        raise ValueError(f"Source ID {selected_source} не найден в SOURCES")
 
     current_source = SOURCES[selected_source]
+
     downloads = False
 
     print(
         f"[INFO] Выбран: {selected_source}, "
         f"Max page: {current_source['max_page']}, Downloads: {downloads}, "
+        f"Concurrency: {concurrency_tabs}, "
         f"Title: {current_source['name']} | {current_source['comment']}\n"
         f"{current_source['url']}\n"
     )
 
     HEADLESS = True
-    START_PAGE = 1
     END_PAGE = current_source['max_page']
-    MAX_CONCURRENT_TENDERS = 10
 
     start_time = time.time()
 
     asyncio.run(run_scraper(
-        start_page=START_PAGE,
+        start_page=1,
         end_page=END_PAGE,
         headless=HEADLESS,
-        max_concurrent_tenders=MAX_CONCURRENT_TENDERS
+        max_tabs=concurrency_tabs
     ))
 
     elapsed = time.time() - start_time

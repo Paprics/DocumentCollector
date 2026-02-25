@@ -13,7 +13,7 @@ def save_files_as_html(url: str, files: list, filename="output_data/output.html"
         f.write("</ul>\n")
         f.write("<hr>\n")
 
-    print(f'Записано - {len(files)}')
+    print(f'[OK]  ✅ Записано - {len(files)} документов.')
 
 
 def is_title_allowed(title):

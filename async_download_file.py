@@ -72,14 +72,21 @@ async def download_files_from_html(
                     print(f"[ОШИБКА] {file_name} | {url} | {e}")
 
 
-async def main():
-    html_file = Path("output_data/output.html")
+async def main(sources_id: int):
+
+    file_name = SOURCES[sources_id]['name']
+
+    html_file = Path("output_data", f'{file_name}.html')
+    save_dir = Path("downloads", file_name)
+    save_dir.mkdir(parents=True, exist_ok=True)
+
     await download_files_from_html(
         html_file,
-        save_dir="downloads",
+        save_dir=save_dir,
         keywords=("пас", "pas")
     )
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    sources_id = 8
+    asyncio.run(main(sources_id))
