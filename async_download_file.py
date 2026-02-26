@@ -72,7 +72,7 @@ async def download_files_from_html(
                     print(f"[ОШИБКА] {file_name} | {url} | {e}")
 
 
-async def main(sources_id: int):
+async def start_download(sources_id: int):
 
     file_name = SOURCES[sources_id]['name']
 
@@ -88,5 +88,5 @@ async def main(sources_id: int):
 
 
 if __name__ == "__main__":
-    sources_id = 15
-    asyncio.run(main(sources_id))
+    sources_id = 18
+    asyncio.run(start_download(sources_id))

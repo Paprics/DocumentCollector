@@ -5,11 +5,11 @@ from functools import wraps
 from playwright.async_api import async_playwright, Page, TimeoutError as PWTimeout
 from utils.funcs import save_files_as_html
 
-# Импорты для работы с базой
 from sqlalchemy.ext.asyncio import AsyncSession
 from db.crud import insert_tender, tender_exists
 from db.core.session import async_session
 import argparse
+from async_download_file import start_download
 
 from sources import SOURCES
 
@@ -113,8 +113,9 @@ async def process_participant(page: Page, participant_block):
 
         if count > 0:
             result = await fetch_documents(document_block)
+            filename = f'output_data/{selected_source}. {current_source['name']}.html'
             await asyncio.to_thread(save_files_as_html, url=page.url, files=result,
-                                    filename=f'output_data/{current_source['name']}.html')
+                                    filename=filename)
 
         await accordion_triger.scroll_into_view_if_needed()
         await page.wait_for_timeout(200)
@@ -149,7 +150,7 @@ async def process_tender_page(page: Page, tender_url: str):
         if count == 0:
             print(f'[INFO] 🟡 тендер {tender_url} — нет участников')
             return []
-        print(f'[INFO🟢] тендер {tender_url} — {count} участников')
+        print(f'[INFO] 🟢 тендер {tender_url} — {count} участников')
         return participants_locator
     except PWTimeout:
         print(f'[DEB] 🟡 участников не найдено {page.url}')
@@ -288,8 +289,8 @@ async def run_scraper(start_page: int, end_page: int,
 if __name__ == "__main__":
 
     # дефолты для дебага / запуска без CLI
-    DEFAULT_SOURCE_ID = 15
-    DEFAULT_MAX_TABS = 15
+    DEFAULT_SOURCE_ID = 17
+    DEFAULT_MAX_TABS = 10
 
     selected_source, concurrency_tabs = cli(DEFAULT_SOURCE_ID, DEFAULT_MAX_TABS)
 
@@ -325,3 +326,6 @@ if __name__ == "__main__":
     minutes, _ = divmod(remainder, 60)
 
     print(f"\n[INFO] Скрипт завершён. Время работы: {hours} часов {minutes} минут, Current source: {selected_source}\n{current_source}")
+
+    # Загрузка файлов
+    asyncio.run(start_download(selected_source))
