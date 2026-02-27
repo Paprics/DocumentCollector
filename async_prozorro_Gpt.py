@@ -4,12 +4,15 @@ import random
 from functools import wraps
 from playwright.async_api import async_playwright, Page, TimeoutError as PWTimeout
 from utils.funcs import save_files_as_html
+from datetime import datetime
+
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from db.crud import insert_tender, tender_exists
 from db.core.session import async_session
 import argparse
 from async_download_file import start_download
+from notifications.telegram import send_notification, send_notification_async
 
 from sources import SOURCES
 
@@ -288,44 +291,70 @@ async def run_scraper(start_page: int, end_page: int,
 # -----------------------
 if __name__ == "__main__":
 
-    # дефолты для дебага / запуска без CLI
-    DEFAULT_SOURCE_ID = 17
-    DEFAULT_MAX_TABS = 10
+    try:
+        DOWNLOAD = True
 
-    selected_source, concurrency_tabs = cli(DEFAULT_SOURCE_ID, DEFAULT_MAX_TABS)
+        # дефолты для дебага / запуска без CLI
+        DEFAULT_SOURCE_ID = 0
+        DEFAULT_MAX_TABS = 10
 
-    if selected_source not in SOURCES:
-        raise ValueError(f"Source ID {selected_source} не найден в SOURCES")
+        selected_source, concurrency_tabs = cli(DEFAULT_SOURCE_ID, DEFAULT_MAX_TABS)
 
-    current_source = SOURCES[selected_source]
+        if selected_source not in SOURCES:
+            raise ValueError(f"Source ID {selected_source} не найден в SOURCES")
 
-    downloads = False
+        current_source = SOURCES[selected_source]
 
-    print(
-        f"[INFO] Выбран: {selected_source}, "
-        f"Max page: {current_source['max_page']}, Downloads: {downloads}, "
-        f"Concurrency: {concurrency_tabs}, "
-        f"Title: {current_source['name']} | {current_source['comment']}\n"
-        f"{current_source['url']}\n"
-    )
+        print(
+            f"[INFO] Выбран: {selected_source}, "
+            f"Max page: {current_source['max_page']}, Downloads: {DOWNLOAD}, "
+            f"Concurrency Tabs: {concurrency_tabs}, "
+            f"Title: {current_source['name']} | {current_source['comment']}\n"
+            f"{current_source['url']}\n"
+        )
 
-    HEADLESS = True
-    END_PAGE = current_source['max_page']
+        send_notification(
+            f"🟡 START {datetime.now():%d-%m-%Y %H:%M:%S}\n"
+            f"Выбран: {selected_source}, "
+            f"Max page: {current_source['max_page']}, Downloads: {DOWNLOAD}, "
+            f"Concurrency Tabs: {concurrency_tabs}, "
+            f"Title: {current_source['name']}"
+        )
 
-    start_time = time.time()
+        HEADLESS = True
+        END_PAGE = current_source['max_page']
 
-    asyncio.run(run_scraper(
-        start_page=1,
-        end_page=END_PAGE,
-        headless=HEADLESS,
-        max_tabs=concurrency_tabs
-    ))
+        start_time = time.time()
 
-    elapsed = time.time() - start_time
-    hours, remainder = divmod(int(elapsed), 3600)
-    minutes, _ = divmod(remainder, 60)
+        asyncio.run(run_scraper(
+            start_page=1,
+            end_page=END_PAGE,
+            headless=HEADLESS,
+            max_tabs=concurrency_tabs
+        ))
 
-    print(f"\n[INFO] Скрипт завершён. Время работы: {hours} часов {minutes} минут, Current source: {selected_source}\n{current_source}")
+        elapsed = time.time() - start_time
+        hours, remainder = divmod(int(elapsed), 3600)
+        minutes, _ = divmod(remainder, 60)
 
-    # Загрузка файлов
-    asyncio.run(start_download(selected_source))
+        print(f"\n[INFO] Скрипт завершён. Время работы: {hours} часов {minutes} минут, Current source: {selected_source}\n{current_source}")
+
+        asyncio.run(send_notification_async(
+            f"🟢 [INFO] Скрипт завершён\n{datetime.now():%d-%m-%Y %H:%M:%S}."
+            f"\nВремя работы: {hours} часов {minutes} минут, "
+            f"Current source: {selected_source}"
+        ))
+
+        # Загрузка файлов
+        if DOWNLOAD:
+            asyncio.run(send_notification_async(f"🟢 [INFO] Старт загрузки файлов\n{datetime.now():%d %m %Y %H:%M:%S}."))
+            asyncio.run(start_download(selected_source))
+            asyncio.run(send_notification_async(f'✅ [INFO] Загрузка завершена\n{datetime.now():%d %m %Y %H:%M:%S}.'))
+
+    except Exception as e:
+        print(f"\n[ERROR] Скрипт упал с ошибкой: {type(e).__name__} - {e}")
+
+        asyncio.run(send_notification_async(
+            f"🔴 [ERROR] Скрипт упал\n{datetime.now():%d-%m-%Y %H:%M:%S}\n"
+            f"Ошибка: {type(e).__name__} - {e}"
+        ))
