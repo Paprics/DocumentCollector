@@ -4,12 +4,15 @@ import random
 from functools import wraps
 from playwright.async_api import async_playwright, Page, TimeoutError as PWTimeout
 from utils.funcs import save_files_as_html
+from datetime import datetime
+
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from db.crud import insert_tender, tender_exists
 from db.core.session import async_session
 import argparse
 from async_download_file import start_download
+from notifications.telegram import send_notification, send_notification_async
 
 from sources import SOURCES
 
@@ -288,8 +291,10 @@ async def run_scraper(start_page: int, end_page: int,
 # -----------------------
 if __name__ == "__main__":
 
+    DOWNLOAD = True
+
     # дефолты для дебага / запуска без CLI
-    DEFAULT_SOURCE_ID = 17
+    DEFAULT_SOURCE_ID = 0
     DEFAULT_MAX_TABS = 10
 
     selected_source, concurrency_tabs = cli(DEFAULT_SOURCE_ID, DEFAULT_MAX_TABS)
@@ -299,14 +304,20 @@ if __name__ == "__main__":
 
     current_source = SOURCES[selected_source]
 
-    downloads = False
-
     print(
         f"[INFO] Выбран: {selected_source}, "
-        f"Max page: {current_source['max_page']}, Downloads: {downloads}, "
-        f"Concurrency: {concurrency_tabs}, "
+        f"Max page: {current_source['max_page']}, Downloads: {DOWNLOAD}, "
+        f"Concurrency Tabs: {concurrency_tabs}, "
         f"Title: {current_source['name']} | {current_source['comment']}\n"
         f"{current_source['url']}\n"
+    )
+
+    send_notification(
+        f"🟡 START {datetime.now():%d-%m-%Y %H:%M:%S}\n"
+        f"Выбран: {selected_source}, "
+        f"Max page: {current_source['max_page']}, Downloads: {DOWNLOAD}, "
+        f"Concurrency Tabs: {concurrency_tabs}, "
+        f"Title: {current_source['name']}"
     )
 
     HEADLESS = True
@@ -327,5 +338,12 @@ if __name__ == "__main__":
 
     print(f"\n[INFO] Скрипт завершён. Время работы: {hours} часов {minutes} минут, Current source: {selected_source}\n{current_source}")
 
+    asyncio.run(send_notification_async(f"🟢 [INFO] Скрипт завершён\n{datetime.now():%d-%m-%Y %H:%M:%S}."
+                         f"\nВремя работы: {hours} часов {minutes} минут, "
+                         f"Current source: {selected_source}"))
+
     # Загрузка файлов
-    asyncio.run(start_download(selected_source))
+    if DOWNLOAD:
+        asyncio.run(send_notification_async(f"🟢 [INFO] Старт загрузки файлов\n{datetime.now():%d %m %Y %H:%M:%S}."))
+        asyncio.run(start_download(selected_source))
+        asyncio.run(send_notification_async(f'✅ [INFO] Загрузка завершена\n{datetime.now():%d %m %Y %H:%M:%S}.'))
