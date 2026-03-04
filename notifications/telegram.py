@@ -50,9 +50,12 @@ async def send_notification_async(msg: str):
     """
     Асинхронная функция для отправки уведомления в Telegram.
     """
-    async with TelegramClient(SESSION_FILE, API_ID, API_HASH) as client:
+    client = TelegramClient(SESSION_FILE, API_ID, API_HASH)
+    await client.start()
+    try:
         await client.send_message(TG_CHANNEL, msg)
-
+    finally:
+        await client.disconnect()
 
 if __name__ == '__main__':
 

@@ -72,12 +72,12 @@ async def download_files_from_html(
                     print(f"[ОШИБКА] {file_name} | {url} | {e}")
 
 
-async def start_download(sources_id: int):
+async def start_download(filter_id: int):
 
-    file_name = SOURCES[sources_id]['name']
+    file_name = SOURCES[filter_id]['name']
 
-    html_file = Path("output_data", f'{sources_id}. {file_name}.html')
-    save_dir = Path("downloads", f'{sources_id}. {file_name}')
+    html_file = Path("output_data", f'{filter_id}. {file_name}.html')
+    save_dir = Path("downloads", f'{filter_id}. {file_name}')
     save_dir.mkdir(parents=True, exist_ok=True)
 
     await download_files_from_html(

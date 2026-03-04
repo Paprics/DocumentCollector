@@ -57,7 +57,7 @@ def process_company(*args):
         print(f'{title}  |  {url}')
 
         try:
-            with open('../output_data/Companies/uk_companies.txt', 'a', encoding='utf-8') as f:
+            with open('../output_data/Companies/uk_companies_football.txt', 'a', encoding='utf-8') as f:
                 f.write(url + '  |  ' + title + '\n')
         except Exception:
             pass
@@ -185,5 +185,5 @@ if __name__ == "__main__":
     fetch_company(
         country="uk",
         headless=True,
-        key_word='servicing',
+        key_word='football',
     )
