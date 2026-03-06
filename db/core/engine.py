@@ -10,7 +10,7 @@ DB_PATH = BASE_DIR / "data" / "db.sqlite"
 DATABASE_URL = f"sqlite:///{DB_PATH}"
 engine = create_engine(
     DATABASE_URL,
-    echo=True,  # True — выводит каждый SQL, False — не выводит
+    echo=False,
     connect_args={"check_same_thread": False}
 )
 

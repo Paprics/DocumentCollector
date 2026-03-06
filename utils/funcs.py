@@ -1,82 +1,57 @@
+
 import os
-from pathlib import Path
-import yaml
 
-
-def save_files_as_html(url: str, files: list, filename: str):
-
-    # убеждаемся, что директория существует
-    os.makedirs(os.path.dirname(filename) or ".", exist_ok=True)
-
-    with open(filename, "a", encoding="utf-8") as f:
-        f.write(f"<p><strong>Страница:</strong> <a href='{url}'>{url}</a></p>\n")
-        f.write("<ul>\n")
-        for name, href in files:
-            f.write(f"  <li><a href='{href}'>{name}</a></li>\n")
-        f.write("</ul>\n")
-        f.write("<hr>\n")
-
-    print(f'[OK]  ✅ Записано - {len(files)} документов.')
-
-
-def update_yaml_status(
-        key: int,
-        new_status: str = "✅Done"
-) -> bool:
+def save_files_as_html(tender_id: str, files: list, base_name: str, source_idx: int):
     """
-    Обновляет значение 'status' для указанного ключа в YAML-файле.
-
-    Args:
-        yaml_file_path: путь к файлу sources.yaml (строка или Path)
-        key: ключ словаря (например 0, 26, 27 и т.д.)
-        new_status: новое значение поля status (по умолчанию '✅Done')
-
-    Returns:
-        bool: True — если успешно изменено, False — если ошибка или ключ не найден
+    Сама решает, куда сохранять: в output/output_data/{base_name}.html
+    Создаёт папку, если нет.
+    Если файла нет — создаёт с началом HTML.
+    Дописывает тендер и документы.
     """
-    file_path = Path('../_OLD_modeles/sources.yaml')
 
-    if not file_path.exists():
-        print(f"❌ Файл не найден: {file_path}")
-        return False
+    output_folder = "output_data"
+    file_name = f'{source_idx}. {base_name}'
+    if not file_name.lower().endswith('.html'):
+        file_name += '.html'
+
+    output_filename = os.path.join(output_folder, file_name)
 
     try:
-        # Читаем и парсим
-        with file_path.open(encoding="utf-8") as f:
-            data = yaml.safe_load(f)
 
-        if data is None:
-            print("❌ Файл пустой или некорректный YAML")
-            return False
+        os.makedirs(output_folder, exist_ok=True)
 
-        if key not in data:
-            print(f"❌ Ключ {key} не найден в файле")
-            return False
+        # Проверяем, существует ли файл — если нет, пишем начало HTML
+        if not os.path.exists(output_filename):
+            with open(output_filename, "w", encoding="utf-8") as f:
+                f.write('<!DOCTYPE html>\n')
+                f.write('<html lang="uk">\n<head>\n<meta charset="UTF-8">\n<title>Документы Prozorro</title>\n</head>\n')
+                f.write('<body style="font-family: Arial, sans-serif; margin:20px;">\n')
+                f.write(f'<h1>Джерело: {base_name}</h1>\n')
+                f.write('<hr style="border:1px solid #444;">\n')
 
-        old_status = data[key].get('status', '(не было)')
-        data[key]['status'] = new_status
+        tender_url = f"https://prozorro.gov.ua/tender/{tender_id}"
 
-        print(f"✓ Изменение для ключа {key}:")
+        with open(output_filename, "a", encoding="utf-8") as f:
+            f.write(f'<h2>Тендер: {tender_id}</h2>\n')
+            f.write(f'<p><a href="{tender_url}" target="_blank" style="color:#0066cc;">Открыть тендер на Prozorro</a></p>\n')
+            f.write('<ul>\n')
 
-        # Сохраняем с красивым форматированием
-        with file_path.open("w", encoding="utf-8") as f:
-            yaml.safe_dump(
-                data,
-                f,
-                allow_unicode=True,  # эмодзи и кириллица без проблем
-                sort_keys=False,  # сохраняем исходный порядок ключей
-                default_flow_style=False  # читаемый многострочный вид
-            )
+            if not files:
+                f.write('<li>Документов не найдено</li>\n')
+            else:
+                for name, href in files:
+                    safe_name = name.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;').replace('"', '&quot;')
+                    f.write(f'<li><a href="{href}" target="_blank">{safe_name}</a></li>\n')
 
-        print(f"Файл успешно обновлён: {file_path}")
-        return True
+            f.write('</ul>\n')
+            f.write('<hr style="border:1px dashed #999; margin:20px 0;">\n')
 
-    except yaml.YAMLError as e:
-        print(f"Ошибка парсинга YAML: {e}")
-        return False
+        if len(files) > 0:
+            print(f'[ОК] Сохранено {len(files)} документов → {output_filename}')
+
     except Exception as e:
-        print(f"Неожиданная ошибка: {type(e).__name__}: {e}")
-        return False
+        print(f"[ОШИБКА СОХРАНЕНИЯ] Тендер {tender_id}: {e}")
+
 
 if "__main__" == __name__:
-    update_yaml_status(key=23)
+    pass
