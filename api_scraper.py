@@ -1,9 +1,15 @@
+import json
+from pathlib import Path
+
 import httpx
 import time
 import random
 from functools import wraps
 from typing import Optional, Dict, List, Tuple
 from urllib.parse import urlparse, parse_qs
+
+from alembic.util import msg
+
 from clients.data import cookies_list
 from sources import SOURCES
 from utils.funcs import save_files_as_html
@@ -13,12 +19,8 @@ from wakepy import keep
 from notifications.telegram import send_notification
 import asyncio
 
-DEBUG = True
-DOWNLOAD_FILES = True
 
-
-
-def retry_on_none_or_429(max_attempts=100, base_delay=2.0, jitter=0.5):
+def retry_on_none_or_429(max_attempts=100, delay=1.0):
     def decorator(func):
         @wraps(func)
         def wrapper(*args, **kwargs):
@@ -26,30 +28,36 @@ def retry_on_none_or_429(max_attempts=100, base_delay=2.0, jitter=0.5):
             while attempt <= max_attempts:
                 try:
                     result = func(*args, **kwargs)
+
                     if result is not None:
                         if DEBUG:
                             print(f"[OK] {func.__name__} успех на попытке {attempt}")
                         return result
+
                     if DEBUG:
                         print(f"[WARN] {func.__name__} → None, попытка {attempt}/{max_attempts}")
+
                 except httpx.HTTPStatusError as e:
                     if e.response.status_code == 429:
                         if DEBUG:
                             print(f"[429] Rate limit, попытка {attempt}/{max_attempts}")
                     else:
                         raise
+
                 except Exception as e:
                     print(f"[EXC] {func.__name__} → {type(e).__name__}: {e}")
                     if attempt == max_attempts:
                         raise
-                delay = base_delay * (1.5 ** (attempt - 1)) + random.uniform(-jitter, jitter)
-                delay = min(delay, 60)
+
                 if DEBUG and attempt < max_attempts:
                     print(f"→ ждём {delay:.2f} сек...")
+
                 time.sleep(delay)
                 attempt += 1
+
             print(f"[FAIL] {func.__name__} исчерпаны все {max_attempts} попыток")
             return None
+
         return wrapper
     return decorator
 
@@ -71,37 +79,40 @@ def build_query_params(query_params: dict) -> dict:
 
     Исключение: если ключ == 'region' — всегда без индекса, даже если значений > 1.
     """
-    KEYS_WITHOUT_INDEX = {"region"}  # ключи, которые всегда идут без [i]
-
     result = {}
-    for key, values in query_params.items():
-        if key in KEYS_WITHOUT_INDEX:
-            # region=1-6  (берём первое значение)
-            result[key] = values[0]
-        else:
-            # cpv[0]=..., cpv[1]=..., — всегда с индексом, даже если один
-            for i, value in enumerate(values):
-                result[f"{key}[{i}]"] = value
 
-    print(query_params)
-    print(result)
-    print('должно быть https://prozorro.gov.ua/api/search/tenders?cpv%5B0%5D=09240000-3')
+    # print(f'Пришел словарь: {query_params}')
+
+    has_value_filter = False
+
+    for key, values in query_params.items():
+
+        if key == 'region':
+            result[key] = values[0]
+
+        elif key == 'cpv':
+            for index, cpv in enumerate(values):
+                result[f'cpv[{index}]'] = cpv
+
+        elif key == 'value.start':
+            result['value[amount][start]'] = values[0]
+            has_value_filter = True
+
+        elif key == 'value.end':
+            result['value[amount][end]'] = values[0]
+            has_value_filter = True
+
+    if has_value_filter:
+        result['value[currency]'] = 'UAH'
+
+    # print(f'[RESULT] - {result}')
+    # input('[STOP DEBUG]')
 
     return result
 
-    # query_params = {'region': ['1-6'], 'cpv': ['44100000-1', '44200000-2', '44420000-0', '44900000-9']}
-    # нужно - region=1-6&cpv[0]=44100000-1&cpv[1]=44200000-2&cpv[2]=44420000-0&cpv[3]=44900000-9
-
-    # query_params = {'cpv': ['09240000-3']}
-    # нужно - cpv[0]=09240000-3
-
-    # for key, values in query_params.items():
-    #     for i, value in enumerate(values):
-    #         search_params[f"{key}[{i}]"] = value
 
 
-
-@retry_on_none_or_429(max_attempts=80, base_delay=2.5)
+@retry_on_none_or_429(max_attempts=100)
 def fetch_tender_detail(tender_id: str, cookies: Optional[Dict] = None) -> Optional[dict]:
     if cookies is None:
         cookies = get_random_cookies()
@@ -120,11 +131,11 @@ def fetch_tender_detail(tender_id: str, cookies: Optional[Dict] = None) -> Optio
         return data if data else None
     except Exception as e:
         if DEBUG:
-            print(f"[ERR detail] {tender_id} → {str(e)[:150].replace('\n', ' ')}")
+            print(f"[ERR detail] {tender_id} → {str(e).replace('\n',' ')[:150]}")
         return None
 
 
-@retry_on_none_or_429(max_attempts=40, base_delay=3.0)
+@retry_on_none_or_429(max_attempts=100)
 def fetch_tender_lots(tender_id: str, cookies: Optional[Dict] = None) -> Optional[dict]:
     if cookies is None:
         cookies = get_random_cookies()
@@ -143,7 +154,7 @@ def fetch_tender_lots(tender_id: str, cookies: Optional[Dict] = None) -> Optiona
         return None
 
 
-@retry_on_none_or_429(max_attempts=20, base_delay=4.0)
+@retry_on_none_or_429(max_attempts=100)
 def fetch_search_page(params: dict, cookies: Optional[Dict] = None) -> Optional[dict]:
     if cookies is None:
         cookies = get_random_cookies()
@@ -184,7 +195,11 @@ def parse_bids_documents(bids: list) -> List[Tuple[str, str]]:
     seen = set()
     for bid in bids:
         docs = bid.get("publicDocuments", {})
+        if not docs or not isinstance(docs, dict):
+            continue
         for group_docs in docs.values():
+            if not isinstance(group_docs, list):
+                continue
             for doc in group_docs:
                 if not isinstance(doc, dict):
                     continue
@@ -222,20 +237,38 @@ def parse_tender_documents(raw_data: dict) -> List[Tuple[str, str]]:
     try:
         if not raw_data:
             return []
-        if raw_data.get("lots"):
+
+        lots = raw_data.get("lots")
+        if lots:
             lots_data = fetch_tender_lots(raw_data["tenderID"])
             if lots_data:
                 return parse_lots_documents(lots_data)
             return []
+
         bids = raw_data.get("bids")
         if bids:
             return parse_bids_documents(bids)
         return []
+
     except Exception as e:
         tender_id = raw_data.get("tenderID", "unknown")
+
         msg = f"⚠️ [WARN] parse_tender_documents тендер {tender_id} → {e}"
         print(msg)
         send_notification(msg)
+
+        try:
+            log_dir = Path("LOGS/error")
+            log_dir.mkdir(parents=True, exist_ok=True)
+
+            file_path = log_dir / f"tender_error_{tender_id}.json"
+
+            with open(file_path, "w", encoding="utf-8") as f:
+                json.dump(raw_data, f, ensure_ascii=False, indent=2)
+
+        except Exception as log_err:
+            print(f"[LOG ERROR] Не удалось сохранить JSON → {log_err}")
+
         return []
 
 
@@ -285,17 +318,11 @@ def main(source_idx: int):
         data_list = page_data.get("data", [])
 
         # ── Проверка на подозрительно большое количество тендеров ──
-        TOTAL_WARN_THRESHOLD = 5000  # предупреждение
         TOTAL_ERROR_THRESHOLD = 10000  # вероятный баг
 
         if total >= TOTAL_ERROR_THRESHOLD:
-            print(f"🔴 [ОШИБКА] Найдено {total} тендеров — проверь URL или параметрах!")
-            print(f"   Ожидаемых страниц: ~{(total // per_page) + 1}. Прерываем.")
+            print(f"🔴 [ОШИБКА] Найдено {total} тендеров — проверь URL или параметры!")
             return
-
-        elif total >= TOTAL_WARN_THRESHOLD:
-            print(
-                f"⚠️  [ВНИМАНИЕ] Найдено {total} тендеров (~{(total // per_page) + 1} стр.) — проверь параметры запроса.")
 
         if not data_list:
             print(f"[PAGE {page}] Пустой список тендеров → завершаем")
@@ -303,7 +330,9 @@ def main(source_idx: int):
 
         tender_ids_on_page = extract_tender_ids_from_search(page_data)
 
-        print(f"[PAGE {page}] Найдено тендеров на странице: {len(tender_ids_on_page)} "
+        pages_total = (total + 19) // 20
+
+        print(f"[PAGE {page}/{pages_total}] Найдено тендеров на странице: {len(tender_ids_on_page)} "
               f"(всего в системе: {total})")
 
         for idx, tender_id in enumerate(tender_ids_on_page, 1):
@@ -317,7 +346,6 @@ def main(source_idx: int):
                     print(f"[DB] 🔷 Тендер {tender_id} уже в базе → пропускаем")
                 continue
 
-
             detail = fetch_tender_detail(tender_id, cookies)
             if not detail:
                 print(f" {tender_id} → detail не получен")
@@ -330,11 +358,11 @@ def main(source_idx: int):
             if count > 0:
                 successful_tenders += 1
                 print(f"\n{tender_id} | документов: {count}")
-                if DEBUG:
-                    for title, url in docs:
-                        print(f" {title}")
-                        print(f" {url}")
-                        print("-" * 80)
+                # if DEBUG:
+                #     for title, url in docs:
+                #         print(f" {title}")
+                #         print(f" {url}")
+                #         print("-" * 80)
 
                 # Передаё только имя без пути — функция сама разберётся
                 save_files_as_html(tender_id, docs, base_name, source_idx)
@@ -348,8 +376,6 @@ def main(source_idx: int):
                 else:
                     print(f"[DB ERROR] 🔴 Тендер {tender_id} НЕ вставлен (возможно уже есть)")
             # ────────────────────────────────────────────────────────────────
-
-
 
         if DEBUG:
             print(f"[PAGE {page}] Итого документов после страницы: {total_documents}")
@@ -371,7 +397,9 @@ def main(source_idx: int):
     print("Завершено.")
     print(f"Старт:    {start_str}")
     print(f"Финиш:    {end_str}")
-    print(f"Время работы: {hours:02d}:{minutes:02d}:{seconds:02d} (всего {duration_sec:.1f} сек)")
+    msg = f"Время работы: {hours:02d}:{minutes:02d}:{seconds:02d} (всего {duration_sec:.1f} сек)"
+    print(msg)
+    send_notification(f'[Завершено] - {msg}')
     print(f"Всего обработано тендеров:          {processed_tenders:>6}")
     print(f"Тендеров с документами (успешных):  {successful_tenders:>6}")
     print(f"Всего собрано документов:           {total_documents:>6}")
@@ -388,7 +416,10 @@ def main(source_idx: int):
 
 if __name__ == "__main__":
 
-    source_indexes = (2, 3, 4)  # ← добавляй нужные индексы
+    DEBUG = True
+    DOWNLOAD_FILES = False
+
+    source_indexes = (29, 30, 31, 32, 33)  # ← нужные индексы
 
     with keep.running():
         for source_idx in source_indexes:

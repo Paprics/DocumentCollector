@@ -4,7 +4,7 @@ from sqlalchemy import select, insert
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 from .core.session import SyncSessionLocal
-
+from .core.session import AsyncSessionLocal
 from db.models.file_hash import FileHash, Tender
 
 
@@ -39,6 +39,30 @@ def sync_insert_tender_to_db(tender_id: str) -> bool:
             new_tender = Tender(tender_id=tender_id)
             session.add(new_tender)
             session.commit()
+            return True
+    except SQLAlchemyError:
+        return False
+
+# --------------- ASYNC
+async def async_tender_exists(tender_id: str) -> bool:
+    try:
+        async with AsyncSessionLocal() as session:
+            stmt = select(Tender).where(Tender.tender_id == tender_id)
+            result = await session.execute(stmt)
+            return result.first() is not None
+    except SQLAlchemyError:
+        return False
+
+
+async def async_insert_tender_to_db(tender_id: str) -> bool:
+    try:
+        async with AsyncSessionLocal() as session:
+            stmt = select(Tender).where(Tender.tender_id == tender_id)
+            result = await session.execute(stmt)
+            if result.first() is not None:
+                return False
+            session.add(Tender(tender_id=tender_id))
+            await session.commit()
             return True
     except SQLAlchemyError:
         return False

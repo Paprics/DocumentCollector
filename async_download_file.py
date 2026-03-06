@@ -6,6 +6,7 @@ from bs4 import BeautifulSoup
 from db.core.session import AsyncSessionLocal
 from db.crud import file_hash_exists, insert_file_hash
 from sources import SOURCES
+from notifications.telegram import send_notification_async
 
 # ────────────────────────────────────────────────
 #  Здесь удобно менять ключевые слова и стоп-слова
@@ -31,6 +32,7 @@ STOP_WORDS = (
     "тех",
     "виробу",
     "шафа",
+    "шафи",
     "товар",
     "інструк",
     "експлуатац",
@@ -38,6 +40,8 @@ STOP_WORDS = (
     "техничний",
     "паспорт якості",
     "сертификат соответствия",
+    "сейф",
+    "люк"
 )
 
 async def download_single_file(session, db, sem, idx, file_name, url, save_dir):
@@ -123,21 +127,33 @@ async def download_files_from_html(
             await asyncio.gather(*tasks, return_exceptions=True)
 
 
-async def start_download(filter_id: int):
-    src = SOURCES[filter_id]
-    file_name = src['name']
-    html_file = Path("output_data") / f"{filter_id}. {file_name}.html"
-    save_dir = Path("downloads") / f"{filter_id}. {file_name}"
+async def start_download(sources_ids: tuple[int, ...]):
+    """
+    Принимает кортеж ID источников и последовательно обрабатывает каждый из них.
+    """
+    for filter_id in sources_ids:
+        src = SOURCES[filter_id]
+        file_name = src['name']
+        html_file = Path("output_data") / f"{filter_id}. {file_name}.html"
+        save_dir = Path("downloads") / f"{filter_id}. {file_name}"
 
-    await download_files_from_html(
-        html_file,
-        save_dir=save_dir,
-        keywords=PASSPORT_KEYWORDS,
-        stop_words=STOP_WORDS,
-        concurrent_limit=10,
-    )
+        print(f"\n{'='*50}")
+        print(f"Источник [{filter_id}]: {file_name}")
+        print(f"{'='*50}")
+
+        await download_files_from_html(
+            html_file,
+            save_dir=save_dir,
+            keywords=PASSPORT_KEYWORDS,
+            stop_words=STOP_WORDS,
+            concurrent_limit=10,
+        )
+        if DEBUG:
+            msg = f'[INFO] ✅ Файлы успешно загружены: sources id-{filter_id}'
+            await send_notification_async(msg)
 
 
 if __name__ == "__main__":
-    sources_id = 4
-    asyncio.run(start_download(sources_id))
+    DEBUG = True
+    sources_ids = 5, 6, 7, 8, 29, 30
+    asyncio.run(start_download(sources_ids))
