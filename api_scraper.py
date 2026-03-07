@@ -8,8 +8,6 @@ from functools import wraps
 from typing import Optional, Dict, List, Tuple
 from urllib.parse import urlparse, parse_qs
 
-from alembic.util import msg
-
 from clients.data import cookies_list
 from sources import SOURCES
 from utils.funcs import save_files_as_html
@@ -321,7 +319,9 @@ def main(source_idx: int):
         TOTAL_ERROR_THRESHOLD = 10000  # вероятный баг
 
         if total >= TOTAL_ERROR_THRESHOLD:
-            print(f"🔴 [ОШИБКА] Найдено {total} тендеров — проверь URL или параметры!")
+            msg = f"🔴 [ОШИБКА] Найдено {total} тендеров — проверь URL или параметры! | {base_name}"
+            print(msg)
+            send_notification(msg)
             return
 
         if not data_list:
@@ -393,16 +393,25 @@ def main(source_idx: int):
     hours, remainder = divmod(int(duration_sec), 3600)
     minutes, seconds = divmod(remainder, 60)
 
-    print("\n" + "="*100)
-    print("Завершено.")
-    print(f"Старт:    {start_str}")
-    print(f"Финиш:    {end_str}")
-    msg = f"Время работы: {hours:02d}:{minutes:02d}:{seconds:02d} (всего {duration_sec:.1f} сек)"
+    print("\n" + "=" * 100)
+
+    msg = (
+        f"Завершено.\n"
+        f"Старт:    {start_str}\n"
+        f"Финиш:    {end_str}\n"
+        f"Время работы: {hours:02d}:{minutes:02d}:{seconds:02d} "
+        f"\n"
+        f"Всего обработано тендеров:          {processed_tenders:>6}\n"
+        f"Тендеров с документами (успешных):  {successful_tenders:>6}\n"
+        f"Всего собрано документов:           {total_documents:>6}"
+    )
+
+    # вывод в терминал
     print(msg)
-    send_notification(f'[Завершено] - {msg}')
-    print(f"Всего обработано тендеров:          {processed_tenders:>6}")
-    print(f"Тендеров с документами (успешных):  {successful_tenders:>6}")
-    print(f"Всего собрано документов:           {total_documents:>6}")
+
+    # отправка того же текста в Telegram
+    send_notification(f"[Завершено] ✅✅✅ {base_name}\n\n{msg}")
+
     if successful_tenders > 0:
         avg_docs = total_documents / successful_tenders
         print(f"В среднем документов на успешный тендер: {avg_docs:.2f}")
@@ -416,10 +425,10 @@ def main(source_idx: int):
 
 if __name__ == "__main__":
 
-    DEBUG = True
+    DEBUG = False
     DOWNLOAD_FILES = False
 
-    source_indexes = (29, 30, 31, 32, 33)  # ← нужные индексы
+    source_indexes = range(37, 48)  # ← нужные индексы
 
     with keep.running():
         for source_idx in source_indexes:

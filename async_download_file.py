@@ -146,8 +146,9 @@ async def start_download(sources_ids: tuple[int, ...]):
             save_dir=save_dir,
             keywords=PASSPORT_KEYWORDS,
             stop_words=STOP_WORDS,
-            concurrent_limit=10,
+            concurrent_limit=8,
         )
+
         if DEBUG:
             msg = f'[INFO] ✅ Файлы успешно загружены: sources id-{filter_id}'
             await send_notification_async(msg)
@@ -155,5 +156,5 @@ async def start_download(sources_ids: tuple[int, ...]):
 
 if __name__ == "__main__":
     DEBUG = True
-    sources_ids = 5, 6, 7, 8, 29, 30
+    sources_ids = range(31, 37)
     asyncio.run(start_download(sources_ids))
