@@ -168,7 +168,7 @@ def fetch_search_page(params: dict, cookies: Optional[Dict] = None) -> Optional[
     try:
         r = httpx.post(url, headers=headers, params=params, cookies=cookies, timeout=15)
 
-        print(r.url)
+        # print(r.url)
 
         if r.status_code == 429:
             return None
@@ -428,12 +428,13 @@ if __name__ == "__main__":
     DEBUG = False
     DOWNLOAD_FILES = False
 
-    source_indexes = range(37, 48)  # ← нужные индексы
+    source_indexes = (42, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58,)  # ← нужные индексы
 
     with keep.running():
+
         for source_idx in source_indexes:
             print(f"\n{'='*100}")
-            msg= f"▶️  Запуск source_idx={source_idx}"
+            msg= f"[Старт] 🟡🟡🟡 Source id={source_idx} | {SOURCES.get(source_idx, {}).get('name')}"
             print(msg)
             send_notification(msg)
             print(f"{'='*100}")
