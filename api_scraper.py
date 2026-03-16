@@ -393,17 +393,25 @@ def main(source_idx: int):
     hours, remainder = divmod(int(duration_sec), 3600)
     minutes, seconds = divmod(remainder, 60)
 
+    avg_tender_sec = duration_sec / processed_tenders if processed_tenders else 0
+    avg_page_sec = duration_sec / page if page else 0
+
+    avg_tender_m, avg_tender_s = divmod(int(avg_tender_sec), 60)
+    avg_page_m, avg_page_s = divmod(int(avg_page_sec), 60)
+
     print("\n" + "=" * 100)
 
     msg = (
         f"Завершено.\n"
         f"Старт:    {start_str}\n"
         f"Финиш:    {end_str}\n"
-        f"Время работы: {hours:02d}:{minutes:02d}:{seconds:02d} "
+        f"Время работы: {hours:02d}:{minutes:02d}:{seconds:02d}\n"
         f"\n"
         f"Всего обработано тендеров:          {processed_tenders:>6}\n"
         f"Тендеров с документами (успешных):  {successful_tenders:>6}\n"
-        f"Всего собрано документов:           {total_documents:>6}"
+        f"Всего собрано документов:           {total_documents:>6}\n"
+        f"\n"
+        f"Среднее время: страница {avg_page_m:02d}:{avg_page_s:02d} | тендер {avg_tender_m:02d}:{avg_tender_s:02d}"
     )
 
     # вывод в терминал
